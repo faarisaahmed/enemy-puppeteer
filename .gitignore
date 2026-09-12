@@ -1,0 +1,4 @@
+bin/
+obj/
+LocalPaths.props
+.DS_Store
