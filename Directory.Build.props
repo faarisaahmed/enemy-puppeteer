@@ -1,0 +1,28 @@
+<Project>
+
+  <!--
+    Where Silksong lives. Don't edit this file - create a LocalPaths.props next to it
+    (gitignored) so your path never lands in a commit:
+
+      <Project>
+        <PropertyGroup>
+          <GamePath>C:\Program Files (x86)\Steam\steamapps\common\Hollow Knight Silksong</GamePath>
+        </PropertyGroup>
+      </Project>
+
+    The import comes first so LocalPaths.props wins before ManagedPath is derived.
+  -->
+  <Import Project="$(MSBuildThisFileDirectory)LocalPaths.props"
+          Condition="Exists('$(MSBuildThisFileDirectory)LocalPaths.props')" />
+
+  <PropertyGroup>
+    <GamePath Condition="'$(GamePath)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Hollow Knight Silksong</GamePath>
+    <ManagedPath>$(GamePath)/Hollow Knight Silksong_Data/Managed</ManagedPath>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+  </PropertyGroup>
+
+</Project>
