@@ -43,31 +43,37 @@ Taking control does four things:
 
 - **Hornet is invulnerable** — via the game's own `AddInvulnerabilitySource`, so it composes
   with anything else granting invulnerability instead of stomping a shared flag
+- **Hornet is parked inside the puppet**, riding along at its position
 - **The camera follows the enemy**, as though it were the player character
-- **Arrow keys steer it directly** — left/right always, up/down for flyers
-- **The FSM is fully suppressed** (`SuppressAll`), so the enemy stops fighting your input
+- **Arrow keys steer it** — and it moves under its own walk cycle, not a slide
 
-Attacks still go through the API's `Fire()`. Movement does not, and that split is
-deliberate: the Override tier fires *state transitions*, and steering is a velocity held
-over time rather than a state an enemy can be told to enter. So movement writes the
-rigidbody directly while attacks stay on the public API.
+### Why it walks instead of sliding
 
-Everything puppet mode changes — invulnerability, hero layer, camera control, gravity — is
-recorded on entry and restored on exit. Closing the window releases it.
+Steering sets the enemy's **facing** and fires its own movement state; it does not write
+velocity. Writing velocity directly gives you a creature gliding around under an idle
+animation — it moves, but nothing about it looks like walking, because the animation, the
+speed curve and the footfalls all live in the state that is no longer running.
 
-### Being unnoticed is best-effort
+Team Cherry's movement actions are largely scale-relative (`SetVelocityByScale`,
+`DistanceWalk`), so flipping the enemy and letting its own walk state run returns the real
+gait for free. Policy is therefore `SuppressDecisions` rather than `SuppressAll` — full
+suppression would veto the transition into the walk state and leave you sliding again.
 
-Hornet's layer is moved to *Ignore Raycast* while puppeteering, which defeats enemies that
-find her by raycast or physics overlap. It will **not** stop an enemy that looks her up
-through `HeroController` directly, and plenty do. So some enemies will still track and
-attack her — she just can't be hurt. Fully hiding the player is not something this can
-promise generically.
+Which sign of X scale means "facing right" is per-enemy art, so there's a **Facing** toggle
+if an enemy moonwalks.
 
-### Enemies with no rigidbody
+Enemies with no usable walk state fall back to direct velocity, and the UI says so rather
+than pretending.
 
-Fall back to firing the enemy's own movement states instead of direct steering — the older,
-weaker behaviour. Press a direction with no matching state and nothing happens, which is
-correct.
+### Why Hornet rides along instead of being hidden
+
+An earlier version moved her to the *Ignore Raycast* layer to stop enemies noticing her.
+That also removed her terrain collision, so she fell out of the world. Parking her on the
+puppet keeps her in bounds, keeps anything anchored to the hero — lighting, audio listener,
+camera bounds — where the action is, and hides her inside the enemy as a side effect.
+
+She is still findable by enemies that look her up through `HeroController`, and plenty do,
+so some will track her. She simply cannot be hurt.
 
 ## Use
 
