@@ -82,26 +82,104 @@ namespace EnemyPuppeteer
         private static Vector2 GuiMousePosition() =>
             new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
 
-        /// <summary>Selects the registered enemy nearest the cursor in world space.</summary>
+        /// <summary>
+        /// Selects whatever enemy the cursor is physically over.
+        /// </summary>
+        /// <remarks>
+        /// Three passes, most precise first. Picking by distance to
+        /// <c>transform.position</c> alone - which is all this used to do - goes wrong in
+        /// two ways that matter: an enemy whose pivot sits at its feet or off inside a wall
+        /// reads as further away than it looks, and in a crowd the nearest pivot is often
+        /// not the body under the cursor.
+        /// </remarks>
         private void PickUnderMouse()
         {
             Camera cam = Camera.main;
             if (cam == null) return;
 
             Vector3 world = cam.ScreenToWorldPoint(Input.mousePosition);
-            EnemyInstance best = null;
-            float bestDistance = _pickRadius.Value;
+            var point = new Vector2(world.x, world.y);
 
+            // 1. A real hit on a collider. Enemy hurtboxes are frequently triggers, and
+            // the project setting for whether queries see triggers is not ours to assume.
+            bool previous = Physics2D.queriesHitTriggers;
+            Physics2D.queriesHitTriggers = true;
+            try
+            {
+                foreach (var hit in Physics2D.OverlapPointAll(point, ~0))
+                {
+                    var owner = OwningEnemy(hit != null ? hit.transform : null);
+                    if (owner != null) { Select(owner); return; }
+                }
+            }
+            finally { Physics2D.queriesHitTriggers = previous; }
+
+            // 2. Inside an enemy's collider bounds, for colliders a point query skipped
+            // (disabled during part of an attack, on an ignored layer, and so on).
             foreach (var enemy in EnemyBehavior.ActiveEnemies)
             {
                 if (!enemy.IsAlive) continue;
-                float d = Vector2.Distance(world, enemy.GameObject.transform.position);
+                foreach (var col in enemy.GameObject.GetComponentsInChildren<Collider2D>(true))
+                {
+                    if (col == null || !col.bounds.Contains(new Vector3(point.x, point.y, col.bounds.center.z))) continue;
+                    Select(enemy);
+                    return;
+                }
+            }
+
+            // 3. Nearest pivot, as a last resort.
+            EnemyInstance best = null;
+            float bestDistance = _pickRadius.Value;
+            foreach (var enemy in EnemyBehavior.ActiveEnemies)
+            {
+                if (!enemy.IsAlive) continue;
+                float d = Vector2.Distance(point, enemy.GameObject.transform.position);
                 if (d >= bestDistance) continue;
                 bestDistance = d;
                 best = enemy;
             }
 
             if (best != null) Select(best);
+            else Note("nothing under the cursor");
+        }
+
+        /// <summary>Walks up from a collider to the registered enemy that owns it, if any.</summary>
+        /// <remarks>
+        /// Hitboxes hang off children - often several levels down - so the object a point
+        /// query returns is almost never the one the API registered.
+        /// </remarks>
+        private static EnemyInstance OwningEnemy(Transform t)
+        {
+            for (; t != null; t = t.parent)
+            {
+                var found = EnemyBehavior.GetInstance(t.gameObject);
+                if (found != null) return found;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Registers anything damageable in the scene that the API has not already picked up.
+        /// </summary>
+        /// <remarks>
+        /// Enemies register when their HealthManager starts. Anything already awake before
+        /// the API loaded, or spawned by a path that does not run that hook, is simply
+        /// absent from the list - which looks like the mod missing enemies that are plainly
+        /// on screen.
+        /// </remarks>
+        private void RescanScene()
+        {
+            int before = EnemyBehavior.ActiveEnemies.Count();
+            int added = 0;
+
+            foreach (var health in FindObjectsOfType<HealthManager>())
+            {
+                if (health == null) continue;
+                if (EnemyBehavior.GetInstance(health.gameObject) != null) continue;
+                if (EnemyBehavior.Track(health.gameObject) != null) added++;
+            }
+
+            Note($"rescan: {before} known, {added} added");
         }
 
         private void Select(EnemyInstance enemy)
@@ -179,7 +257,10 @@ namespace EnemyPuppeteer
             }
 
             var enemies = EnemyBehavior.ActiveEnemies.Where(e => e.IsAlive).ToList();
-            GUILayout.Label($"{enemies.Count} enemy instance(s) in scene - click one in the world, or pick below");
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"{enemies.Count} enemy instance(s) - click one in the world, or pick below");
+            if (GUILayout.Button("Rescan", GUILayout.Width(70))) RescanScene();
+            GUILayout.EndHorizontal();
 
             _scroll = GUILayout.BeginScrollView(_scroll, GUILayout.Height(130));
             foreach (var enemy in enemies)
