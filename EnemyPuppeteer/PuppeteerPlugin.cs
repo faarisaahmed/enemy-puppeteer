@@ -68,33 +68,40 @@ namespace EnemyPuppeteer
 
             if (!_open) return;
 
-            if (Input.GetMouseButtonDown(0) && !_window.Contains(GuiMousePosition())) PickUnderMouse();
+            bool overWindow = _window.Contains(GuiMousePosition());
+
+            // While puppeteering, left-click moves the lure - that is the main verb, so it
+            // gets the main button. Selection moves to right-click for the duration.
+            if (Input.GetMouseButtonDown(0) && !overWindow)
+            {
+                if (_mode != null) PlaceLureUnderMouse();
+                else PickUnderMouse();
+            }
+            else if (Input.GetMouseButtonDown(1) && !overWindow)
+            {
+                PickUnderMouse();
+            }
 
             if (_handle == null || !_handle.IsValid || _handle.Tier != AuthorityTier.Override) return;
 
-            if (_mode != null)
+            // Movement is the enemy's own job now - it hunts the lure under its own AI.
+            // Arrow keys only remain as a fallback for enemies that ignore Hornet entirely.
+            if (_mode == null)
             {
-                _mode.Drive(ReadAxes(_mode.CanFly));
-            }
-            else
-            {
-                // No rigidbody to drive - fall back to firing the enemy's own movement states.
                 var result = _puppet?.Drive(_handle, PuppetController.ReadIntent());
                 if (result != null)
                     Note($"{(result.Item2 ? "drive" : "DRIVE FAILED")}: {result.Item1.DisplayName} ({result.Item1.Mode})");
             }
         }
 
-        private void LateUpdate() => _mode?.FollowCamera();
+        private void LateUpdate() => _mode?.HoldPosition();
 
-        /// <summary>Arrow keys as an axis pair. Vertical only matters for flyers.</summary>
-        private static Vector2 ReadAxes(bool canFly)
+        /// <summary>Puts the lure where the cursor is, so the enemy walks there.</summary>
+        private void PlaceLureUnderMouse()
         {
-            float x = (Input.GetKey(KeyCode.RightArrow) ? 1f : 0f) - (Input.GetKey(KeyCode.LeftArrow) ? 1f : 0f);
-            float y = canFly
-                ? (Input.GetKey(KeyCode.UpArrow) ? 1f : 0f) - (Input.GetKey(KeyCode.DownArrow) ? 1f : 0f)
-                : 0f;
-            return new Vector2(x, y);
+            Camera cam = Camera.main;
+            if (cam == null || _mode == null) return;
+            _mode.PlaceLure(cam.ScreenToWorldPoint(Input.mousePosition));
         }
 
         // ---- Selection ------------------------------------------------------------------
@@ -233,11 +240,6 @@ namespace EnemyPuppeteer
 
             if (_handle.Tier == AuthorityTier.Override)
             {
-                // SuppressDecisions, not SuppressAll. The puppet moves by running its own
-                // walk state, and SuppressAll would veto the transition into it - leaving an
-                // enemy that can only slide.
-                _handle.Policy = OverridePolicy.SuppressDecisions;
-
                 _mode = new PuppetMode(_selected, _handle);
                 if (!string.IsNullOrEmpty(_mode.Limitations)) Note("limits: " + _mode.Limitations);
             }
@@ -357,13 +359,10 @@ namespace EnemyPuppeteer
             GUILayout.Space(4);
             if (_mode != null)
             {
-                GUILayout.Label("PUPPET MODE - Hornet is invulnerable and parked inside this enemy.");
-                GUILayout.Label(_mode.CanFly
-                    ? "   arrows steer; up/down controls height"
-                    : "   left/right steer; it walks with its own gait");
-                GUILayout.Label($"   driving: {_mode.Driving}");
-                if (GUILayout.Button(_mode.InvertFacing ? "Facing: inverted" : "Facing: normal"))
-                    _mode.InvertFacing = !_mode.InvertFacing;
+                GUILayout.Label("PUPPET MODE - Hornet is invisible, invulnerable and cannot act.");
+                GUILayout.Label("   LEFT-CLICK to move her. The enemy hunts her under its own AI,");
+                GUILayout.Label("   so it walks, turns and attacks exactly as it normally would.");
+                GUILayout.Label("   RIGHT-CLICK to select a different enemy.");
                 if (!string.IsNullOrEmpty(_mode.Limitations))
                     GUILayout.Label("   limits: " + _mode.Limitations);
             }
