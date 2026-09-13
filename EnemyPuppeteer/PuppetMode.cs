@@ -236,7 +236,10 @@ namespace EnemyPuppeteer
         public void PlaceMarker(Vector3 worldPosition)
         {
             if (_disposed || _hero == null) return;
-            _lure = new Vector3(worldPosition.x, worldPosition.y, _hero.transform.position.z);
+            // Keep whatever z the caller resolved: it is the plane the enemy stands on, and
+            // WorldToScreenPoint has to round-trip against the same plane for the crosshair
+            // to land back under the cursor.
+            _lure = worldPosition;
             _hero.transform.position = _lure;
             if (_heroBody != null) _heroBody.linearVelocity = Vector2.zero;
         }
