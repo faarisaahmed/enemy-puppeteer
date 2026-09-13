@@ -13,8 +13,30 @@
       mod would consume it - not as a ProjectReference. That is deliberate: if this
       builds, the public API is genuinely usable from outside its own solution.
     -->
+  </ItemGroup>
+
+  <!--
+    Where EnemyBehaviorApi.dll lives. BepInEx scans plugins/ recursively, so people group
+    mods into subfolders freely and a single hardcoded path breaks the moment anyone tidies
+    up. Set EnemyBehaviorApiPath in LocalPaths.props to point at it directly; otherwise the
+    usual spots are tried in order.
+  -->
+  <PropertyGroup>
+    <_ApiUnderPluginRoot>$(PluginRoot)/EnemyBehaviorApi/EnemyBehaviorApi.dll</_ApiUnderPluginRoot>
+    <_ApiFlat>$(GamePath)/BepInEx/plugins/EnemyBehaviorApi/EnemyBehaviorApi.dll</_ApiFlat>
+
+    <EnemyBehaviorApiPath Condition="'$(EnemyBehaviorApiPath)' == '' AND Exists('$(_ApiUnderPluginRoot)')">$(_ApiUnderPluginRoot)</EnemyBehaviorApiPath>
+    <EnemyBehaviorApiPath Condition="'$(EnemyBehaviorApiPath)' == '' AND Exists('$(_ApiFlat)')">$(_ApiFlat)</EnemyBehaviorApiPath>
+  </PropertyGroup>
+
+  <Target Name="CheckApiReference" BeforeTargets="ResolveAssemblyReferences"
+          Condition="'$(EnemyBehaviorApiPath)' == '' Or !Exists('$(EnemyBehaviorApiPath)')">
+    <Error Text="EnemyBehaviorApi.dll not found. Install the Enemy Behavior API, or set &lt;EnemyBehaviorApiPath&gt; in LocalPaths.props to its full path. Looked in: $(_ApiUnderPluginRoot) and $(_ApiFlat)" />
+  </Target>
+
+  <ItemGroup>
     <Reference Include="EnemyBehaviorApi">
-      <HintPath>$(GamePath)/BepInEx/plugins/EnemyBehaviorApi/EnemyBehaviorApi.dll</HintPath>
+      <HintPath>$(EnemyBehaviorApiPath)</HintPath>
       <Private>false</Private>
     </Reference>
 
@@ -57,7 +79,7 @@
   </ItemGroup>
 
   <Target Name="CopyToPlugins" AfterTargets="Build">
-    <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll" DestinationFolder="$(GamePath)/BepInEx/plugins/EnemyPuppeteer/" />
+    <Copy SourceFiles="$(TargetDir)$(AssemblyName).dll" DestinationFolder="$(PluginRoot)/EnemyPuppeteer/" />
   </Target>
 
 </Project>

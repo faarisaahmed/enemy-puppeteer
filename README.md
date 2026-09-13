@@ -15,7 +15,8 @@ that in about four seconds of driving one by hand.
 
 - **Lists every enemy** the API has discovered in the current scene
 - **Click an enemy's hitbox** to select it (or pick from the list)
-- **Take control** — claims Override, which suppresses the enemy's own decision-making
+- **Take control** — claims Override and enters *puppet mode*: Hornet becomes
+  invulnerable, the camera locks onto the enemy, and its body is yours to steer
 - **Fire any discovered attack** from a button grid, labelled with shape and confidence
 - **Steer with arrow keys**, using that enemy's own movement states
 - **Live readout** of the enemy's current PlayMaker state and whether each command landed
@@ -36,17 +37,37 @@ setups, guards on distance or phase that rarely hold.
 never does, and also why an attack fired out of context sometimes looks broken: it was
 authored to run only after something else set it up.
 
-## What it deliberately can't do
+## Puppet mode
 
-Arrow keys are **not a velocity puppet.** The Override tier fires state transitions — it
-doesn't write position — so the honest ceiling is "make the enemy do something it already
-knows how to do, now". Press left on an enemy with no leftward behaviour and nothing
-happens. That's the correct outcome, and feeling that constraint is half the point of the
-rig.
+Taking control does four things:
 
-Horizontal is also generous on purpose: nothing in the schema records which *way* a
-movement state sends an enemy — most of them go wherever it's already facing — so a walk is
-offered for both left and right and the enemy's own facing logic decides.
+- **Hornet is invulnerable** — via the game's own `AddInvulnerabilitySource`, so it composes
+  with anything else granting invulnerability instead of stomping a shared flag
+- **The camera follows the enemy**, as though it were the player character
+- **Arrow keys steer it directly** — left/right always, up/down for flyers
+- **The FSM is fully suppressed** (`SuppressAll`), so the enemy stops fighting your input
+
+Attacks still go through the API's `Fire()`. Movement does not, and that split is
+deliberate: the Override tier fires *state transitions*, and steering is a velocity held
+over time rather than a state an enemy can be told to enter. So movement writes the
+rigidbody directly while attacks stay on the public API.
+
+Everything puppet mode changes — invulnerability, hero layer, camera control, gravity — is
+recorded on entry and restored on exit. Closing the window releases it.
+
+### Being unnoticed is best-effort
+
+Hornet's layer is moved to *Ignore Raycast* while puppeteering, which defeats enemies that
+find her by raycast or physics overlap. It will **not** stop an enemy that looks her up
+through `HeroController` directly, and plenty do. So some enemies will still track and
+attack her — she just can't be hurt. Fully hiding the player is not something this can
+promise generically.
+
+### Enemies with no rigidbody
+
+Fall back to firing the enemy's own movement states instead of direct steering — the older,
+weaker behaviour. Press a direction with no matching state and nothing happens, which is
+correct.
 
 ## Use
 
