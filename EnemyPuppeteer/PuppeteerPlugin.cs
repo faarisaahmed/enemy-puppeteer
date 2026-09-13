@@ -74,7 +74,7 @@ namespace EnemyPuppeteer
             // gets the main button. Selection moves to right-click for the duration.
             if (Input.GetMouseButtonDown(0) && !overWindow)
             {
-                if (_mode != null) PlaceLureUnderMouse();
+                if (_mode != null) PlaceMarkerUnderMouse();
                 else PickUnderMouse();
             }
             else if (Input.GetMouseButtonDown(1) && !overWindow)
@@ -84,24 +84,19 @@ namespace EnemyPuppeteer
 
             if (_handle == null || !_handle.IsValid || _handle.Tier != AuthorityTier.Override) return;
 
-            // Movement is the enemy's own job now - it hunts the lure under its own AI.
-            // Arrow keys only remain as a fallback for enemies that ignore Hornet entirely.
-            if (_mode == null)
-            {
-                var result = _puppet?.Drive(_handle, PuppetController.ReadIntent());
-                if (result != null)
-                    Note($"{(result.Item2 ? "drive" : "DRIVE FAILED")}: {result.Item1.DisplayName} ({result.Item1.Mode})");
-            }
+            // Walk toward the marker every frame. Attacks stay entirely manual - the point
+            // of driving an enemy is choosing when it commits.
+            _mode?.StepTowardMarker();
         }
 
         private void LateUpdate() => _mode?.HoldPosition();
 
-        /// <summary>Puts the lure where the cursor is, so the enemy walks there.</summary>
-        private void PlaceLureUnderMouse()
+        /// <summary>Puts the marker where the cursor is, so the enemy walks there.</summary>
+        private void PlaceMarkerUnderMouse()
         {
             Camera cam = Camera.main;
             if (cam == null || _mode == null) return;
-            _mode.PlaceLure(cam.ScreenToWorldPoint(Input.mousePosition));
+            _mode.PlaceMarker(cam.ScreenToWorldPoint(Input.mousePosition));
         }
 
         // ---- Selection ------------------------------------------------------------------
@@ -280,7 +275,32 @@ namespace EnemyPuppeteer
         private void OnGUI()
         {
             if (!_open) return;
+            DrawMarker();
             _window = GUI.Window(GetInstanceID(), _window, DrawWindow, "Enemy Puppeteer");
+        }
+
+        /// <summary>
+        /// Draws a crosshair where the marker is standing.
+        /// </summary>
+        /// <remarks>
+        /// Hornet is invisible there, so without this the enemy walks toward a spot with
+        /// nothing visible in it and there is no way to tell a missed click from an enemy
+        /// that cannot move.
+        /// </remarks>
+        private void DrawMarker()
+        {
+            Vector2? at = _mode?.MarkerOnScreen();
+            if (at == null) return;
+
+            Vector2 p = at.Value;
+            Color previous = GUI.color;
+            GUI.color = _mode.IsWalking ? new Color(1f, 0.85f, 0.2f, 0.95f) : new Color(1f, 1f, 1f, 0.6f);
+
+            const float arm = 11f, thick = 2f;
+            GUI.DrawTexture(new Rect(p.x - arm, p.y - thick * 0.5f, arm * 2f, thick), Texture2D.whiteTexture);
+            GUI.DrawTexture(new Rect(p.x - thick * 0.5f, p.y - arm, thick, arm * 2f), Texture2D.whiteTexture);
+
+            GUI.color = previous;
         }
 
         private void DrawWindow(int id)
@@ -359,12 +379,18 @@ namespace EnemyPuppeteer
             GUILayout.Space(4);
             if (_mode != null)
             {
-                GUILayout.Label("PUPPET MODE - Hornet is invisible, invulnerable and cannot act.");
-                GUILayout.Label("   LEFT-CLICK to move her. The enemy hunts her under its own AI,");
-                GUILayout.Label("   so it walks, turns and attacks exactly as it normally would.");
-                GUILayout.Label("   RIGHT-CLICK to select a different enemy.");
+                GUILayout.Label("PUPPET MODE - Hornet is an invisible marker; you drive everything.");
+                GUILayout.Label("   LEFT-CLICK to move the marker - the enemy walks to it");
+                GUILayout.Label("   RIGHT-CLICK to select a different enemy");
+                GUILayout.Label($"   walking with: {_mode.WalkName}{(_mode.IsWalking ? "  [moving]" : "")}");
+                if (GUILayout.Button(_mode.InvertFacing ? "Facing: inverted" : "Facing: normal"))
+                    _mode.InvertFacing = !_mode.InvertFacing;
                 if (!string.IsNullOrEmpty(_mode.Limitations))
                     GUILayout.Label("   limits: " + _mode.Limitations);
+
+                GUILayout.Space(4);
+                GUILayout.Label("Movement states - for ledges, gaps and repositioning:");
+                DrawMovementButtons(profile);
             }
             else
             {
@@ -375,6 +401,42 @@ namespace EnemyPuppeteer
                     GUILayout.Label($"   {intent,-6} {(bound != null ? $"{bound.DisplayName} ({bound.Mode})" : "- nothing bound -")}");
                 }
             }
+        }
+
+        /// <summary>
+        /// Jumps, dashes and the like, as buttons.
+        /// </summary>
+        /// <remarks>
+        /// The walk handles flat ground; anything else - a ledge, a gap, closing distance
+        /// fast - is the player's call, same as an attack. Idle and plain walks are left out
+        /// since the marker already drives those.
+        /// </remarks>
+        private void DrawMovementButtons(EnemyProfile profile)
+        {
+            var interesting = profile?.Movements
+                .Where(m => m.Mode == MovementMode.Jump || m.Mode == MovementMode.Dash ||
+                            m.Mode == MovementMode.Teleport)
+                .OrderByDescending(m => m.Confidence)
+                .ToList();
+
+            if (interesting == null || interesting.Count == 0)
+            {
+                GUILayout.Label("   (none - this enemy only walks)");
+                return;
+            }
+
+            int column = 0;
+            GUILayout.BeginHorizontal();
+            foreach (var move in interesting)
+            {
+                if (GUILayout.Button($"{move.DisplayName}\n{move.Mode}", GUILayout.Height(30)))
+                {
+                    bool ok = _handle.Fire(move.Id);
+                    Note($"{(ok ? "move" : "MOVE FAILED")}: {move.DisplayName}");
+                }
+                if (++column % 3 == 0) { GUILayout.EndHorizontal(); GUILayout.BeginHorizontal(); }
+            }
+            GUILayout.EndHorizontal();
         }
 
         private void DrawAttackButtons(EnemyProfile profile)
