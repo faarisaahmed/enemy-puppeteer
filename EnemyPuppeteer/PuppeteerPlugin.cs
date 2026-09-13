@@ -92,17 +92,44 @@ namespace EnemyPuppeteer
         private void LateUpdate() => _mode?.HoldPosition();
 
         /// <summary>Puts the marker where the cursor is, so the enemy walks there.</summary>
+        /// <remarks>
+        /// The depth has to be filled in before converting. <c>Input.mousePosition</c> has
+        /// z = 0, and on a perspective camera that resolves to a point essentially at the
+        /// camera itself - which maps back to the centre of the screen no matter where you
+        /// click. Supplying the distance to the plane the enemy is standing on fixes it,
+        /// and is harmless on an orthographic camera.
+        /// </remarks>
         private void PlaceMarkerUnderMouse()
         {
             Camera cam = Camera.main;
-            if (cam == null || _mode == null) return;
-            _mode.PlaceMarker(cam.ScreenToWorldPoint(Input.mousePosition));
+            if (cam == null || _mode == null || _selected == null || !_selected.IsAlive) return;
+
+            Vector3 world = CursorWorld(cam, _selected.GameObject.transform.position.z);
+            _mode.PlaceMarker(world);
+            Note($"marker -> ({world.x:0.0}, {world.y:0.0})");
         }
 
         // ---- Selection ------------------------------------------------------------------
 
         private static Vector2 GuiMousePosition() =>
             new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
+
+        /// <summary>The world point under the cursor, on the plane at <paramref name="planeZ"/>.</summary>
+        /// <remarks>
+        /// The depth must be supplied before converting. <c>Input.mousePosition</c> carries
+        /// z = 0, and on a perspective camera that resolves to a point essentially at the
+        /// camera - which maps back to the centre of the screen wherever you click. Both
+        /// clicking an enemy and placing the marker were wrong for this reason, the first
+        /// one subtly enough to look like a picking-radius problem.
+        /// </remarks>
+        private static Vector3 CursorWorld(Camera cam, float planeZ)
+        {
+            Vector3 screen = Input.mousePosition;
+            screen.z = Mathf.Abs(cam.transform.position.z - planeZ);
+            Vector3 world = cam.ScreenToWorldPoint(screen);
+            world.z = planeZ;
+            return world;
+        }
 
         /// <summary>
         /// Selects whatever enemy the cursor is physically over.
@@ -119,7 +146,14 @@ namespace EnemyPuppeteer
             Camera cam = Camera.main;
             if (cam == null) return;
 
-            Vector3 world = cam.ScreenToWorldPoint(Input.mousePosition);
+            // Resolve on the plane the enemies are actually standing on, not z = 0.
+            float planeZ = EnemyBehavior.ActiveEnemies
+                .Where(e => e.IsAlive)
+                .Select(e => e.GameObject.transform.position.z)
+                .DefaultIfEmpty(0f)
+                .First();
+
+            Vector3 world = CursorWorld(cam, planeZ);
             var point = new Vector2(world.x, world.y);
 
             // 1. A real hit on a collider. Enemy hurtboxes are frequently triggers, and
