@@ -74,9 +74,6 @@ namespace EnemyPuppeteer
 
             if (_mode != null)
             {
-                // Direct body control. Steering is a velocity held over time, not a state an
-                // enemy can be told to enter, so this writes the rigidbody rather than
-                // firing transitions. Attacks still go through the API.
                 _mode.Drive(ReadAxes(_mode.CanFly));
             }
             else
@@ -236,17 +233,13 @@ namespace EnemyPuppeteer
 
             if (_handle.Tier == AuthorityTier.Override)
             {
-                // Full suppression while puppeteering. On SuppressDecisions the enemy keeps
-                // running its own movement states, which fight the velocity we write and
-                // make steering feel like wrestling.
-                _handle.Policy = OverridePolicy.SuppressAll;
+                // SuppressDecisions, not SuppressAll. The puppet moves by running its own
+                // walk state, and SuppressAll would veto the transition into it - leaving an
+                // enemy that can only slide.
+                _handle.Policy = OverridePolicy.SuppressDecisions;
 
-                _mode = new PuppetMode(_selected);
+                _mode = new PuppetMode(_selected, _handle);
                 if (!string.IsNullOrEmpty(_mode.Limitations)) Note("limits: " + _mode.Limitations);
-
-                // Park it in an idle so something sensible animates underneath us.
-                var idle = _handle.Profile?.Movements.FirstOrDefault(m => m.Mode == MovementMode.Idle);
-                if (idle != null) _handle.Fire(idle.Id);
             }
 
             Note(_handle.Tier == AuthorityTier.Override
@@ -364,10 +357,13 @@ namespace EnemyPuppeteer
             GUILayout.Space(4);
             if (_mode != null)
             {
-                GUILayout.Label($"PUPPET MODE - Hornet is invulnerable and camera follows this enemy.");
+                GUILayout.Label("PUPPET MODE - Hornet is invulnerable and parked inside this enemy.");
                 GUILayout.Label(_mode.CanFly
-                    ? $"   arrows move freely (speed {_mode.Speed:0.#}) - up/down included"
-                    : $"   left/right walk (speed {_mode.Speed:0.#}); gravity still applies");
+                    ? "   arrows steer; up/down controls height"
+                    : "   left/right steer; it walks with its own gait");
+                GUILayout.Label($"   driving: {_mode.Driving}");
+                if (GUILayout.Button(_mode.InvertFacing ? "Facing: inverted" : "Facing: normal"))
+                    _mode.InvertFacing = !_mode.InvertFacing;
                 if (!string.IsNullOrEmpty(_mode.Limitations))
                     GUILayout.Label("   limits: " + _mode.Limitations);
             }
