@@ -14,11 +14,27 @@ that in about four seconds of driving one by hand.
 ## What it does
 
 - **Lists every enemy** the API has discovered in the current scene
-- **Click an enemy in the world** to select it (or pick from the list)
+- **Click an enemy's hitbox** to select it (or pick from the list)
 - **Take control** — claims Override, which suppresses the enemy's own decision-making
 - **Fire any discovered attack** from a button grid, labelled with shape and confidence
 - **Steer with arrow keys**, using that enemy's own movement states
 - **Live readout** of the enemy's current PlayMaker state and whether each command landed
+- **Rescan** button for enemies that were already awake before the API loaded
+
+## Firing attacks the game never shows you
+
+Most enemies have states you will never see in normal play. The mod reads the FSM graph,
+not the play history, so every state Team Cherry authored is listed and firable.
+
+In one recorded session, 20 attacks never fired during play - and every one of them was
+still *reachable*, none orphaned. So this is mostly conditional gating rather than deleted
+content: caged variants whose `UNCAGED` event only a cage broadcasts, arena-specific
+setups, guards on distance or phase that rarely hold.
+
+`Fire()` bypasses the guard - it sends the trigger event directly, or falls back to
+`SetState` and jumps straight in. That is why the rig can show you behaviour the game
+never does, and also why an attack fired out of context sometimes looks broken: it was
+authored to run only after something else set it up.
 
 ## What it deliberately can't do
 
