@@ -68,6 +68,27 @@ into her would otherwise drag the marker around mid-fight.
 An earlier version moved her to the *Ignore Raycast* layer to stop enemies seeing her. That
 also removed terrain collision and dropped her out of the world.
 
+### Only the controlled enemy reacts
+
+The marker is a real, targetable Hornet standing in the room, so by default every enemy in
+earshot converges on it. Correct behaviour, and completely unusable — the fight becomes
+whatever the scene happened to contain rather than the duel you set up.
+
+**Bystanders: held** (the default) claims every other enemy through the same public
+authority the puppet uses and suppresses its decisions. They keep running whatever state
+they were in and settle into idle, but cannot choose to chase or attack. Enemies that
+wander in mid-fight are caught too.
+
+They are not blinded — they're prevented from acting. That distinction matters, because
+preventing action is something the API can actually guarantee, whereas hiding Hornet is not
+(an earlier attempt at that dropped her out of the world). Only their *decisions* are
+suppressed, so a stray enemy can still be killed and still flinches when hit.
+
+Enemies another mod already controls are left alone and reported in the panel, since a
+bystander that keeps attacking is otherwise a mystery.
+
+Toggle it off with the **Bystanders** button, or set `OnlyControlledEnemyReacts = false`.
+
 ### Enemies that cannot walk
 
 Some are stationary by design and have no walk state at all. The UI says so rather than

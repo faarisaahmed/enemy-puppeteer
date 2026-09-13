@@ -35,11 +35,13 @@ namespace EnemyPuppeteer
 
         private ConfigEntry<KeyCode> _toggleKey;
         private ConfigEntry<float> _pickRadius;
+        private ConfigEntry<bool> _soloMode;
 
         private readonly List<string> _log = new List<string>();
         private IEnemyHandle _handle;
         private PuppetController _puppet;
         private PuppetMode _mode;
+        private BystanderSuppressor _bystanders;
         private EnemyInstance _selected;
         private Vector2 _scroll;
         private bool _open;
@@ -51,6 +53,11 @@ namespace EnemyPuppeteer
                 "Opens and closes the puppeteer window. Control is released when it closes.");
             _pickRadius = Config.Bind("Puppeteer", "ClickRadius", 2.5f,
                 "How close to an enemy, in world units, a click has to land to select it.");
+
+            _soloMode = Config.Bind("Puppeteer", "OnlyControlledEnemyReacts", true,
+                "While puppeteering, stop every other enemy reacting to Hornet. The marker is a real " +
+                "targetable Hornet, so without this the whole room converges on it and the duel becomes " +
+                "whatever the scene happened to contain.");
 
             Logger.LogInfo($"Enemy Puppeteer ready - press {_toggleKey.Value}");
         }
@@ -271,6 +278,9 @@ namespace EnemyPuppeteer
             {
                 _mode = new PuppetMode(_selected, _handle);
                 if (!string.IsNullOrEmpty(_mode.Limitations)) Note("limits: " + _mode.Limitations);
+
+                if (_soloMode.Value)
+                    _bystanders = new BystanderSuppressor(Guid, _selected, Note);
             }
 
             Note(_handle.Tier == AuthorityTier.Override
@@ -282,6 +292,9 @@ namespace EnemyPuppeteer
         {
             _mode?.Dispose();
             _mode = null;
+
+            _bystanders?.Dispose();
+            _bystanders = null;
 
             if (_handle == null) return;
             _handle.StateChanged -= OnStateChanged;
@@ -421,6 +434,27 @@ namespace EnemyPuppeteer
                     _mode.InvertFacing = !_mode.InvertFacing;
                 if (!string.IsNullOrEmpty(_mode.Limitations))
                     GUILayout.Label("   limits: " + _mode.Limitations);
+
+                GUILayout.BeginHorizontal();
+                if (GUILayout.Button(_soloMode.Value
+                        ? $"Bystanders: held ({_bystanders?.Count ?? 0})"
+                        : "Bystanders: free"))
+                {
+                    _soloMode.Value = !_soloMode.Value;
+                    if (_soloMode.Value)
+                    {
+                        _bystanders = new BystanderSuppressor(Guid, _selected, Note);
+                    }
+                    else
+                    {
+                        _bystanders?.Dispose();
+                        _bystanders = null;
+                        Note("bystanders released - the whole room can see Hornet again");
+                    }
+                }
+                GUILayout.EndHorizontal();
+                if (_bystanders != null && _bystanders.Contested > 0)
+                    GUILayout.Label($"   {_bystanders.Contested} controlled by another mod - not held");
 
                 GUILayout.Space(4);
                 GUILayout.Label("Movement states - for ledges, gaps and repositioning:");
