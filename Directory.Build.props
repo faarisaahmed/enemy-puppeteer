@@ -18,6 +18,9 @@
   <PropertyGroup>
     <GamePath Condition="'$(GamePath)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Hollow Knight Silksong</GamePath>
     <ManagedPath>$(GamePath)/Hollow Knight Silksong_Data/Managed</ManagedPath>
+
+    <!-- Where the built plugin is installed. Override in LocalPaths.props for a nested layout. -->
+    <PluginRoot Condition="'$(PluginRoot)' == ''">$(GamePath)/BepInEx/plugins</PluginRoot>
   </PropertyGroup>
 
   <PropertyGroup>

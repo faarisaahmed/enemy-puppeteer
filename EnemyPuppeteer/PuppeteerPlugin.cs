@@ -39,6 +39,7 @@ namespace EnemyPuppeteer
         private readonly List<string> _log = new List<string>();
         private IEnemyHandle _handle;
         private PuppetController _puppet;
+        private PuppetMode _mode;
         private EnemyInstance _selected;
         private Vector2 _scroll;
         private bool _open;
@@ -69,12 +70,34 @@ namespace EnemyPuppeteer
 
             if (Input.GetMouseButtonDown(0) && !_window.Contains(GuiMousePosition())) PickUnderMouse();
 
-            if (_handle != null && _handle.Tier == AuthorityTier.Override && _handle.IsValid)
+            if (_handle == null || !_handle.IsValid || _handle.Tier != AuthorityTier.Override) return;
+
+            if (_mode != null)
             {
+                // Direct body control. Steering is a velocity held over time, not a state an
+                // enemy can be told to enter, so this writes the rigidbody rather than
+                // firing transitions. Attacks still go through the API.
+                _mode.Drive(ReadAxes(_mode.CanFly));
+            }
+            else
+            {
+                // No rigidbody to drive - fall back to firing the enemy's own movement states.
                 var result = _puppet?.Drive(_handle, PuppetController.ReadIntent());
                 if (result != null)
                     Note($"{(result.Item2 ? "drive" : "DRIVE FAILED")}: {result.Item1.DisplayName} ({result.Item1.Mode})");
             }
+        }
+
+        private void LateUpdate() => _mode?.FollowCamera();
+
+        /// <summary>Arrow keys as an axis pair. Vertical only matters for flyers.</summary>
+        private static Vector2 ReadAxes(bool canFly)
+        {
+            float x = (Input.GetKey(KeyCode.RightArrow) ? 1f : 0f) - (Input.GetKey(KeyCode.LeftArrow) ? 1f : 0f);
+            float y = canFly
+                ? (Input.GetKey(KeyCode.UpArrow) ? 1f : 0f) - (Input.GetKey(KeyCode.DownArrow) ? 1f : 0f)
+                : 0f;
+            return new Vector2(x, y);
         }
 
         // ---- Selection ------------------------------------------------------------------
@@ -211,6 +234,21 @@ namespace EnemyPuppeteer
             _puppet = new PuppetController(_handle.Profile);
             _handle.StateChanged += OnStateChanged;
 
+            if (_handle.Tier == AuthorityTier.Override)
+            {
+                // Full suppression while puppeteering. On SuppressDecisions the enemy keeps
+                // running its own movement states, which fight the velocity we write and
+                // make steering feel like wrestling.
+                _handle.Policy = OverridePolicy.SuppressAll;
+
+                _mode = new PuppetMode(_selected);
+                if (!string.IsNullOrEmpty(_mode.Limitations)) Note("limits: " + _mode.Limitations);
+
+                // Park it in an idle so something sensible animates underneath us.
+                var idle = _handle.Profile?.Movements.FirstOrDefault(m => m.Mode == MovementMode.Idle);
+                if (idle != null) _handle.Fire(idle.Id);
+            }
+
             Note(_handle.Tier == AuthorityTier.Override
                 ? $"took control ({_handle.Policy})"
                 : $"only got {_handle.Tier} - someone else holds Override");
@@ -218,6 +256,9 @@ namespace EnemyPuppeteer
 
         private void ReleaseControl()
         {
+            _mode?.Dispose();
+            _mode = null;
+
             if (_handle == null) return;
             _handle.StateChanged -= OnStateChanged;
             _handle.Dispose();
@@ -321,11 +362,23 @@ namespace EnemyPuppeteer
             DrawAttackButtons(profile);
 
             GUILayout.Space(4);
-            GUILayout.Label("Arrow keys steer, using this enemy's own movement states:");
-            foreach (Intent intent in new[] { Intent.Left, Intent.Right, Intent.Up, Intent.Down })
+            if (_mode != null)
             {
-                var bound = _puppet?.Preview(intent);
-                GUILayout.Label($"   {intent,-6} {(bound != null ? $"{bound.DisplayName} ({bound.Mode})" : "- nothing bound -")}");
+                GUILayout.Label($"PUPPET MODE - Hornet is invulnerable and camera follows this enemy.");
+                GUILayout.Label(_mode.CanFly
+                    ? $"   arrows move freely (speed {_mode.Speed:0.#}) - up/down included"
+                    : $"   left/right walk (speed {_mode.Speed:0.#}); gravity still applies");
+                if (!string.IsNullOrEmpty(_mode.Limitations))
+                    GUILayout.Label("   limits: " + _mode.Limitations);
+            }
+            else
+            {
+                GUILayout.Label("Arrow keys fire this enemy's own movement states:");
+                foreach (Intent intent in new[] { Intent.Left, Intent.Right, Intent.Up, Intent.Down })
+                {
+                    var bound = _puppet?.Preview(intent);
+                    GUILayout.Label($"   {intent,-6} {(bound != null ? $"{bound.DisplayName} ({bound.Mode})" : "- nothing bound -")}");
+                }
             }
         }
 
